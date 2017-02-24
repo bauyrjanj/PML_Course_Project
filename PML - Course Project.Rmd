@@ -1,0 +1,118 @@
+---
+title: "PML - Course Project"
+author: "Bauyrjan"
+date: "2/22/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load necessary packages
+```{r}
+suppressMessages(library(caret))
+suppressMessages(library(rpart))
+suppressMessages(library(randomForest))
+```
+
+## Load data
+
+```{r}
+training<-read.csv("pml-training.csv", header = TRUE)
+testing<-read.csv("pml-testing.csv", header = TRUE)
+```
+
+## Data cleaning
+
+```{r}
+#                           ***   TRAINING DATA SET   ***
+# Remove 1st column as it is reduntant index information and also 5th column as it creates different levels issue when predicting 
+training<-training[,-c(1,5)]
+# Deal with NAs; remove columns with NAs
+training2<-training #creating another subset to iterate in loop
+for(i in 1:length(training)) { #for every column in the training dataset
+        if(sum(is.na(training[,i]))/nrow(training)>=0.01) {
+        for(j in 1:length(training2)) {
+            if( length(grep(names(training[i]),names(training2)[j])) ==1)  { #if the columns are the same:
+                training2<-training2[ , -j] #Remove that column
+            }   
+        } 
+    }
+}
+training<-training2
+# Remove near-zero variables
+nzv<-nearZeroVar(training, saveMetrics = T)
+n<-nearZeroVar(training)
+training<-training[,-n]
+#                        ***  TESTING DATA SET   *** (Follow the same steps as in cleaning up training set)
+testing<-testing[,-c(1,5)]
+# Deal with NAs; remove columns with NAs
+testing2<-testing #creating another subset to iterate in loop
+for(i in 1:length(testing)) { #for every column in the training dataset
+        if(sum(is.na(testing[,i]))/nrow(testing)>=0.01) {
+        for(j in 1:length(testing2)) {
+            if( length(grep(names(testing[i]),names(testing2)[j])) ==1)  { #if the columns are the same:
+                testing2<-testing2[ , -j] #Remove that column
+            }   
+        } 
+    }
+}
+testing<-testing2
+# Remove near-zero variables
+tz<-nearZeroVar(testing, saveMetrics = T)
+t<-nearZeroVar(testing)
+testing<-testing[,-t]
+# Let's check if all column names in both data sets are the same
+namesTrain<-colnames(training)
+namesTrain<-namesTrain[-57] # remove last column as it is an outcome variable that to be predicted
+namesTest<-colnames(testing) 
+namesTest<-namesTest[-57] # remove last column as it does not exist in training set
+all.equal(namesTrain[1:length(namesTrain)], namesTest[1:length(namesTest)])
+# Split training set into training and validation sets; this also helps random forest run smoothly on smaller observations
+idx<-createDataPartition(training$classe, p=0.6, list = FALSE)
+myTrain<-training[idx,]
+myValid<-training[-idx,]
+```
+
+## Model selection
+
+```{r, results='hide'}
+# fit the first model; Recursive partitioning and regression trees is one of the ideal models suitable for class variables
+fit0<-train(classe ~ ., data=myTrain, method="rpart")
+# fit the second model; Random forest is another one of the ideal models suitable for class variables
+set.seed(365)
+fit1<-randomForest(classe~., data = myTrain)
+```
+
+## Predict with fitted models using the validation data
+
+```{r}
+# Predict with first model and see model performance
+p0<-predict(fit0, newdata = myValid, type = "raw")
+confusionMatrix(p0, myValid$classe)
+# Predict with second model and see model performance
+p1<-predict(fit1, newdata=myValid, type="response")
+confusionMatrix(p1, myValid$classe)
+# Let's do cross-validation on second model to validate its good performance over the first model
+train_control<-trainControl(method="cv", number=3, savePredictions = TRUE)
+cvFit1<-train(classe~., data=myValid, trControl=train_control, method="rf")
+cvFit1$finalModel
+```
+
+According to our cross-validation of performances of both models, it is suggested that second model that involves the use of
+random forest is the best model with high accuracy and small estimate of error rate.
+
+## Conclusion
+
+```{r}
+# Random forest is chosen as the best model as it has higher accuracy than that of rpart accuracy 
+# Finally apply the best model to final test set 
+p4<-predict(fit1, newdata = testing, type = "class")
+print(p4)
+```
+
+
+
+
+
